@@ -7,7 +7,9 @@ import (
 	"launchpad.net/tomb"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -25,11 +27,20 @@ const (
 )
 
 var (
-	ScriptPath           = filepath.Join("./", "sbin")
+	ScriptPath string
+
 	LinesChannelSize     = 1024
 	FilePath             = "logs/development.json.log"
 	SavePreviousEventMod = 1000
 )
+
+func init() {
+	if ScriptPath == "" {
+		_, filename, _, _ := runtime.Caller(1)
+		ScriptPath = path.Join(path.Dir(filename), "sbin")
+		logger.Debug("tail.ScriptPath = %+v", ScriptPath)
+	}
+}
 
 func NewTailer() *Tailer {
 	t := Tailer{}
@@ -68,10 +79,16 @@ func (t *Tailer) findAndRead(filePath string, follow bool, startEventId string, 
 	if _, err = os.Stat(filePath); os.IsNotExist(err) {
 		return err
 	}
+	if _, err = os.Stat(filepath.Join(ScriptPath, CommandTailFromEnd)); os.IsNotExist(err) {
+		return err
+	}
 
 	logger.Info("Searching %s for event %s...", filePath, startEventId)
 	cmd := exec.Command(filepath.Join(ScriptPath, CommandFindEvent), filePath, startEventId)
-	cmdStderr, _ := cmd.StderrPipe()
+	cmdStderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
 	logStderr(cmdStderr)
 	eventLocation, err := cmd.Output()
 	if err != nil {
@@ -89,11 +106,14 @@ func (t *Tailer) findAndRead(filePath string, follow bool, startEventId string, 
 		logger.Info("Event %s found at line -%s, reading from here...", startEventId, eventLocation)
 		cmd = exec.Command(filepath.Join(ScriptPath, CommandTailFromEvent), strconv.FormatBool(follow), filePath, startEventId)
 	}
-	cmdStderr, _ = cmd.StderrPipe()
+	cmdStderr, err = cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
 	logStderr(cmdStderr)
 	cmdStdout, err := cmd.StdoutPipe()
 	if err != nil {
-		logger.Panic("Error reading file with tail: %s", err)
+		return err
 	}
 	cmdReader := bufio.NewReader(cmdStdout)
 	cmd.Start()
