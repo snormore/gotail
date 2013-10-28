@@ -83,16 +83,24 @@ func (t *Tailer) findAndRead(filePath string, follow bool, startEventId string, 
 		return err
 	}
 
-	logger.Info("Searching %s for event %s...", filePath, startEventId)
-	cmd := exec.Command(filepath.Join(ScriptPath, CommandFindEvent), filePath, startEventId)
-	cmdStderr, err := cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
-	logStderr(cmdStderr)
-	eventLocation, err := cmd.Output()
-	if err != nil {
-		return err
+	var eventLocation []byte
+	var cmd *exec.Cmd
+	var cmdStderr io.ReadCloser
+	if startEventId == "" {
+		eventLocation = []byte("0")
+		logger.Info("No previous event saved, starting from beginning of file...")
+	} else {
+		logger.Info("Searching %s for event %s...", filePath, startEventId)
+		cmd = exec.Command(filepath.Join(ScriptPath, CommandFindEvent), filePath, startEventId)
+		cmdStderr, err = cmd.StderrPipe()
+		if err != nil {
+			return err
+		}
+		logStderr(cmdStderr)
+		eventLocation, err = cmd.Output()
+		if err != nil {
+			return err
+		}
 	}
 
 	if string(eventLocation) == "-1" {
